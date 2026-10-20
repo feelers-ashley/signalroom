@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Signal Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f4f2ed; --ink:#141414; --muted:#6b6862; --line:#d7d3ca; --card:#fbfaf7;
+  --accent:#e2481c; --ok:#1f7a4d; --warn:#b45309; --night:#121212;
+  --font:"Instrument Sans", Aptos, system-ui, sans-serif; --mono:"JetBrains Mono", ui-monospace, monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);font-family:var(--font)}
+body{display:flex;flex-direction:column;overflow:hidden}
+button,input{font:inherit;color:inherit;border-radius:0}
+header{display:flex;align-items:center;gap:16px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--card)}
+header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.02em}
+header h1{white-space:nowrap}
+@media (max-width:520px){ header .act{display:none} }
+header .act{font-family:var(--mono);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+header .spacer{flex:1}
+.badge{font-family:var(--mono);font-size:11px;padding:3px 8px;border:1px solid var(--line)}
+.badge.ok{border-color:var(--ok);color:var(--ok)} .badge.local{border-color:var(--warn);color:var(--warn)} .badge.off{color:var(--accent);border-color:var(--accent)}
+main{flex:1;display:flex;min-height:0}
+#panel{width:300px;flex:none;border-right:1px solid var(--line);background:var(--card);padding:16px;overflow:auto;display:none}
+.host #panel{display:block}
+#stage{flex:1;position:relative;min-width:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.tabs{display:grid;gap:6px;margin-bottom:18px}
+.tabs button{text-align:left;padding:9px 12px;border:1px solid var(--line);background:var(--paper);cursor:pointer}
+.tabs button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.ctl{margin:14px 0}
+.ctl label{display:flex;justify-content:space-between;font-weight:600;font-size:14px}
+.ctl label span{font-family:var(--mono);font-weight:400}
+.ctl small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.ctl input[type=range]{width:100%;accent-color:var(--accent)}
+.row{display:flex;gap:6px;flex-wrap:wrap}
+.row button{flex:1;padding:7px 4px;border:1px solid var(--line);background:var(--paper);cursor:pointer;font-size:13px}
+.row button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.plain{padding:8px 12px;border:1px solid var(--line);background:var(--paper);cursor:pointer;width:100%;margin-top:8px}
+.consider{margin-top:18px;padding:12px;border-left:3px solid var(--accent);background:var(--paper);font-size:14px;line-height:1.45}
+.consider b{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:4px}
+.about{font-size:13px;color:var(--muted);line-height:1.45}
+#join{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:16px;background:var(--paper);z-index:5}
+#join form{width:100%;max-width:340px}
+#join h2{margin:0 0 6px;font-size:28px}
+#join p{color:var(--muted);margin:0 0 18px}
+#join input{width:100%;padding:12px;border:1px solid var(--ink);background:#fff;font-size:18px}
+#join button{width:100%;margin-top:10px;padding:12px;border:0;background:var(--ink);color:var(--paper);font-weight:600;font-size:16px}
+#lobby{position:absolute;inset:0;display:none;padding:32px;gap:32px;align-items:center;justify-content:center;flex-wrap:wrap;overflow:auto}
+#lobby .qr{background:#fff;padding:14px;border:1px solid var(--line)}
+#lobby .url{font-family:var(--mono);font-size:22px;word-break:break-all;margin:12px 0}
+#lobby .names{display:flex;flex-wrap:wrap;gap:6px;max-width:520px}
+#lobby .names span{padding:4px 10px;border:1px solid var(--line);background:var(--card);font-size:14px}
+#lobby h2{font-size:40px;margin:0}
+.note{font-size:12px;color:var(--muted);font-family:var(--mono)}
+@media (max-width:700px){ .host #panel{width:220px} }
+</style>
+</head>
+<body>
+<header>
+  <h1>Signal Room</h1><span class="act" id="actName">Lobby</span>
+  <span class="spacer"></span><span class="badge" id="who"></span><span class="badge" id="badge">connecting</span>
+</header>
+<main>
+  <aside id="panel">
+    <div class="tabs" id="tabs"></div>
+    <div id="controls"></div>
+    <div class="consider" id="consider"></div>
+    <button class="plain" id="clear">Clear this activity's data</button>
+  </aside>
+  <section id="stage">
+    <canvas id="cv"></canvas>
+    <div id="lobby"></div>
+    <div id="join"><form id="joinForm">
+      <h2>Signal Room</h2><p>Type a name to join. Keep this page open.</p>
+      <input id="name" maxlength="16" placeholder="Your name" autocomplete="off" required>
+      <button>Join</button>
+    </form></div>
+  </section>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="config.js"></script>
+<script src="net.js"></script>
+<script>
+/* ============================================================
+   Signal Room — three live activities for Workshop 2.
+   Players: open the page.   Host (projector): add ?host to the address.
+   ============================================================ */
+const HOST = /[?&]host\b/.test(location.search);
+if (HOST) document.body.classList.add('host');
+Net.start(window.FIREBASE_CONFIG, window.ROOM || 'signal-room');
+
+const ACTS = {
+  lobby:     { name: 'Lobby' },
+  fireflies: { name: 'Fireflies',
+    about: 'Every phone is a firefly with its own rhythm. When a phone sees another flash, it nudges its own clock forward a little. No one leads.',
+    consider: 'No one was in charge, so where did the rhythm come from? Now raise the delay: what breaks first, and why?' },
+  steersman: { name: 'Steersman',
+    about: 'One shared dot. Everyone pushes it from their phone to keep it on the moving target. The host can add a delay between your push and the dot.',
+    consider: 'Everyone was steering. Who was in control? What did the delay do to your corrections — and to the dot?' },
+  tworooms:  { name: 'Two Rooms',
+    about: 'The class is split into Room A and Room B. Press and hold to send a signal to the other room. The host decides how much of it gets through.',
+    consider: 'Which bandwidth was enough to feel the other room was there? What did one bit carry that you did not expect?' },
+};
+const BANDS = ['One bit', 'Count', 'Position', 'Colour + touch'];
+
+let state = { act: 'lobby', coupling: 0.12, delay: 0, gain: 1, band: 0 };
+let players = {};
+let me = null;               // { name, hue }
+const $ = (id) => document.getElementById(id);
+
+/* ---------------- connection badge ---------------- */
+Net.onStatus((ok, mode) => {
+  const b = $('badge');
+  b.className = 'badge ' + (!ok ? 'off' : mode === 'local' ? 'local' : 'ok');
+  b.textContent = !ok ? 'offline' : mode === 'local' ? 'local mode' : 'live';
+});
+
+/* ---------------- shared state ---------------- */
+Net.onValue('state', (v) => {
+  if (!v && HOST) { Net.set('state', state); return; }
+  if (v) state = Object.assign({}, state, v);
+  onState();
+});
+Net.onValue('players', (v) => { players = v || {}; if (state.act === 'lobby') drawLobby(); });
+
+function setState(patch) { Object.assign(state, patch); Net.update('state', patch); onState(); }
+
+function onState() {
+  $('actName').textContent = ACTS[state.act].name + (state.act === 'tworooms' ? ' · ' + BANDS[state.band] : '');
+  $('lobby').style.display = state.act === 'lobby' && HOST ? 'flex' : 'none';
+  if (HOST) buildPanel();
+  if (state.act === 'lobby') drawLobby();
+}
+
+/* ---------------- join (players) ---------------- */
+function join(name) {
+  me = { name, hue: Math.floor(Math.random() * 360) };
+  try { sessionStorage.setItem('sr-name', name); } catch (e) {}
+  Net.here('players/' + Net.id, { name: me.name, hue: me.hue, t: Net.now() });
+  $('join').style.display = 'none';
+  $('who').textContent = name;
+}
+if (!HOST) {
+  let saved = null; try { saved = sessionStorage.getItem('sr-name'); } catch (e) {}
+  if (saved) join(saved); else $('join').style.display = 'flex';
+  $('joinForm').onsubmit = (e) => { e.preventDefault(); join($('name').value.trim() || 'someone'); };
+} else {
+  $('who').textContent = 'host';
+}
+
+/* players sorted by join time; Room A / Room B alternate */
+function roster() { return Object.entries(players).sort((a, b) => (a[1].t || 0) - (b[1].t || 0)); }
+function groupOf(id) { const i = roster().findIndex(([k]) => k === id); return i < 0 ? 'A' : (i % 2 ? 'B' : 'A'); }
+
+/* ---------------- host panel ---------------- */
+function buildPanel() {
+  $('tabs').innerHTML = '';
+  Object.entries(ACTS).forEach(([k, a]) => {
+    const b = document.createElement('button');
+    b.textContent = a.name; b.className = state.act === k ? 'on' : '';
+    b.onclick = () => setState({ act: k });
+    $('tabs').appendChild(b);
+  });
+  const c = $('controls'); c.innerHTML = '';
+  const slider = (key, label, desc, min, max, step, fmt) => {
+    const d = document.createElement('div'); d.className = 'ctl';
+    d.innerHTML = `<label>${label}<span>${fmt(state[key])}</span></label><input type="range" min="${min}" max="${max}" step="${step}" value="${state[key]}"><small>${desc}</small>`;
+    const inp = d.querySelector('input');
+    inp.oninput = () => { d.querySelector('span').textContent = fmt(+inp.value); };
+    inp.onchange = () => setState({ [key]: +inp.value });
+    c.appendChild(d);
+  };
+  const a = ACTS[state.act];
+  if (a.about) { const p = document.createElement('p'); p.className = 'about'; p.textContent = a.about; c.appendChild(p); }
+  if (state.act === 'fireflies') {
+    slider('coupling', 'Coupling', 'How far a phone jumps forward when it sees another flash.', 0, 0.5, 0.01, (v) => v.toFixed(2));
+    slider('delay', 'Delay', 'Extra time before a flash reaches the other phones.', 0, 1500, 50, (v) => v + ' ms');
+  }
+  if (state.act === 'steersman') {
+    slider('gain', 'Gain', 'How hard the class pushes the dot.', 0.2, 3, 0.1, (v) => v.toFixed(1));
+    slider('delay', 'Delay', 'Time between your push and the dot moving.', 0, 2000, 50, (v) => v + ' ms');
+  }
+  if (state.act === 'tworooms') {
+    const d = document.createElement('div'); d.className = 'ctl';
+    d.innerHTML = '<label>Bandwidth</label><div class="row"></div><small>What each room receives of the other room\'s touches.</small>';
+    BANDS.forEach((n, i) => {
+      const b = document.createElement('button'); b.textContent = n; b.className = state.band === i ? 'on' : '';
+      b.onclick = () => setState({ band: i }); d.querySelector('.row').appendChild(b);
+    });
+    c.appendChild(d);
+  }
+  $('consider').style.display = a.consider ? 'block' : 'none';
+  $('consider').innerHTML = a.consider ? '<b>Consider</b>' + a.consider : '';
+  $('clear').style.display = state.act === 'lobby' ? 'none' : 'block';
+}
+$('clear').onclick = () => {
+  if (state.act === 'fireflies') { Net.remove('flash'); raster.length = 0; }
+  if (state.act === 'steersman') { trail.length = 0; errs.length = 0; Object.assign(dot, { x: 0, y: 0, vx: 0, vy: 0 }); }
+  if (state.act === 'tworooms') Net.remove('two');
+};
+
+/* ---------------- lobby (host) ---------------- */
+let qrDone = false;
+function drawLobby() {
+  if (!HOST) return;
+  const url = location.href.split('?')[0].split('#')[0];
+  const n = roster();
+  $('lobby').innerHTML = `<div class="qr" id="qr"></div>
+    <div><h2>Join on your phone</h2><div class="url">${url}</div>
+    <p class="note">${n.length} in the room${Net.mode === 'local' ? ' · local mode: only tabs on this computer' : ''}</p>
+    <div class="names">${n.map(([, p]) => `<span style="border-left:4px solid hsl(${p.hue} 70% 50%)">${esc(p.name)}</span>`).join('')}</div></div>`;
+  if (window.QRCode) new QRCode($('qr'), { text: url, width: 260, height: 260 });
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ============================================================
+   canvas + input
+   ============================================================ */
+const cv = $('cv'), g = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = window.devicePixelRatio || 1; W = cv.clientWidth; H = cv.clientHeight;
+  cv.width = W * DPR; cv.height = H * DPR; g.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+const pointer = { down: false, x: 0, y: 0 };
+function pt(e) { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); Object.assign(pointer, pt(e), { down: true }); onPress(); });
+cv.addEventListener('pointermove', (e) => { Object.assign(pointer, pt(e)); });
+const up = () => { pointer.down = false; onRelease(); };
+cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+
+function onPress() {
+  if (HOST || !me) return;
+  if (state.act === 'fireflies') fire();
+}
+function onRelease() {}
+
+/* ============================================================
+   1. FIREFLIES — pulse-coupled oscillators (Mirollo & Strogatz)
+   ============================================================ */
+const fly = { phase: Math.random(), period: 1400 * (1 + (Math.random() - 0.5) * 0.16), glow: 0, last: 0 };
+const raster = []; // host: { id, at }
+function fire() {
+  fly.phase = 0; fly.glow = 1; fly.last = performance.now();
+  Net.push('flash', { id: Net.id, t: Net.now() });
+}
+Net.onNew('flash', (v) => {
+  if (!v) return;
+  if (HOST) { raster.push({ id: v.id, at: performance.now() }); return; }
+  if (v.id === Net.id || state.act !== 'fireflies' || !me) return;
+  setTimeout(() => {                // the delay the host sets
+    if (fly.phase > 0.12) {         // short refractory time after flashing
+      fly.phase += state.coupling * fly.phase;
+      if (fly.phase >= 1) fire();
+    }
+  }, state.delay);
+});
+function stepFly(dt) {
+  if (HOST || !me || state.act !== 'fireflies') return;
+  fly.phase += dt / fly.period;
+  if (fly.phase >= 1) fire();
+  fly.glow *= Math.pow(0.02, dt / 1000);
+}
+function drawFirefliesPlayer() {
+  g.fillStyle = '#121212'; g.fillRect(0, 0, W, H);
+  const r = Math.min(W, H) * 0.32;
+  const a = fly.glow;
+  const grad = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, r * (1 + a));
+  grad.addColorStop(0, `rgba(255,214,120,${0.15 + a * 0.85})`); grad.addColorStop(1, 'rgba(255,214,120,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 2;
+  g.beginPath(); g.arc(W / 2, H / 2, r * 0.35, -Math.PI / 2, -Math.PI / 2 + fly.phase * Math.PI * 2); g.stroke();
+  text('Tap to flash early', W / 2, H - 28, '#8d8a84', 14, 'center');
+}
+function drawFirefliesHost() {
+  g.fillStyle = '#121212'; g.fillRect(0, 0, W, H);
+  const ids = roster().map(([k]) => k);
+  const now = performance.now(), span = 10000, top = 70, rowH = Math.min(26, (H - top - 40) / Math.max(1, ids.length));
+  while (raster.length && now - raster[0].at > span) raster.shift();
+  // sync index: for each recent flash, the share of other fireflies that flashed within 120 ms
+  const recent = raster.filter((f) => now - f.at < 4000);
+  let s = 0;
+  recent.forEach((f) => { const near = new Set(recent.filter((o) => o.id !== f.id && Math.abs(o.at - f.at) < 120).map((o) => o.id)); s += near.size / Math.max(1, ids.length - 1); });
+  const sync = recent.length ? s / recent.length : 0;
+  text('Each row is a phone. Each mark is a flash. Vertical lines mean they are in sync.', 24, 34, '#8d8a84', 14);
+  text(Math.round(sync * 100) + '% in sync', W - 24, 40, '#ffd678', 28, 'right', 700);
+  ids.forEach((id, i) => {
+    const y = top + i * rowH;
+    g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(24, y, W - 48, rowH - 3);
+    text((players[id] && players[id].name) || id, 28, y + rowH / 2 + 4, '#8d8a84', Math.min(12, rowH - 6));
+  });
+  raster.forEach((f) => {
+    const i = ids.indexOf(f.id); if (i < 0) return;
+    const x = 24 + (W - 48) * (1 - (now - f.at) / span), y = top + i * rowH, age = (now - f.at) / 600;
+    g.fillStyle = `rgba(255,214,120,${Math.max(0.55, 1 - age)})`; g.fillRect(x - 2, y, 4, rowH - 3);
+  });
+}
+
+/* ============================================================
+   2. STEERSMAN — collective negative feedback, with delay
+   ============================================================ */
+const dot = { x: 0, y: 0, vx: 0, vy: 0 };     // host simulation, in -1..1 space
+const trail = [], errs = [], buffer = [];
+let inputs = {}, view = null, lastSend = 0, lastIn = 0, myIn = { x: 0, y: 0 };
+Net.onValue('steer/in', (v) => { inputs = v || {}; });
+Net.onValue('steer/view', (v) => { view = v; });
+function target(t) { return { x: 0.65 * Math.sin(t * 0.00031), y: 0.55 * Math.sin(t * 0.00047 + 1) }; }
+function arena() { const s = Math.min(W, H - 90) * 0.45; return { cx: W / 2, cy: (H - 90) / 2 + 10, s }; }
+function stepSteerHost(dt, now) {
+  const list = Object.values(inputs);
+  const avg = list.reduce((a, p) => ({ x: a.x + (p.x || 0), y: a.y + (p.y || 0) }), { x: 0, y: 0 });
+  if (list.length) { avg.x /= list.length; avg.y /= list.length; }
+  buffer.push({ t: now, x: avg.x, y: avg.y });
+  while (buffer.length > 1 && buffer[1].t <= now - state.delay) buffer.shift();
+  const u = buffer[0];                       // the push from `delay` ms ago
+  const k = 2.2 * state.gain * dt / 1000;
+  dot.vx = (dot.vx + u.x * k) * Math.pow(0.35, dt / 1000);
+  dot.vy = (dot.vy + u.y * k) * Math.pow(0.35, dt / 1000);
+  dot.x = Math.max(-1, Math.min(1, dot.x + dot.vx * dt / 1000));
+  dot.y = Math.max(-1, Math.min(1, dot.y + dot.vy * dt / 1000));
+  const tg = target(now);
+  trail.push({ x: dot.x, y: dot.y }); if (trail.length > 240) trail.shift();
+  errs.push(Math.hypot(dot.x - tg.x, dot.y - tg.y)); if (errs.length > 600) errs.shift();
+  if (now - lastSend > 100) { lastSend = now; Net.set('steer/view', { px: +dot.x.toFixed(3), py: +dot.y.toFixed(3), tx: +tg.x.toFixed(3), ty: +tg.y.toFixed(3) }); }
+  return { tg, avg, n: list.length };
+}
+function drawArena(px, py, tx, ty, showTrail) {
+  const { cx, cy, s } = arena();
+  g.strokeStyle = '#d7d3ca'; g.lineWidth = 1; g.strokeRect(cx - s, cy - s, s * 2, s * 2);
+  g.beginPath(); g.moveTo(cx - s, cy); g.lineTo(cx + s, cy); g.moveTo(cx, cy - s); g.lineTo(cx, cy + s); g.stroke();
+  if (showTrail) { g.strokeStyle = 'rgba(226,72,28,.35)'; g.beginPath(); trail.forEach((p, i) => { const X = cx + p.x * s, Y = cy + p.y * s; i ? g.lineTo(X, Y) : g.moveTo(X, Y); }); g.stroke(); }
+  g.strokeStyle = '#141414'; g.lineWidth = 2; g.beginPath(); g.arc(cx + tx * s, cy + ty * s, s * 0.09, 0, 7); g.stroke();
+  g.fillStyle = '#e2481c'; g.beginPath(); g.arc(cx + px * s, cy + py * s, s * 0.045, 0, 7); g.fill();
+}
+function drawSteerHost(info) {
+  g.fillStyle = '#f4f2ed'; g.fillRect(0, 0, W, H);
+  drawArena(dot.x, dot.y, info.tg.x, info.tg.y, true);
+  const { cx, cy, s } = arena();
+  g.strokeStyle = '#1f7a4d'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx + dot.x * s, cy + dot.y * s); g.lineTo(cx + (dot.x + info.avg.x * 0.4) * s, cy + (dot.y + info.avg.y * 0.4) * s); g.stroke();
+  // error trace
+  const y0 = H - 70, h = 56;
+  g.fillStyle = '#fbfaf7'; g.fillRect(24, y0, W - 48, h);
+  g.strokeStyle = '#e2481c'; g.lineWidth = 1.5; g.beginPath();
+  errs.forEach((e, i) => { const X = 24 + (W - 48) * i / 600, Y = y0 + h - Math.min(1, e / 1.2) * h; i ? g.lineTo(X, Y) : g.moveTo(X, Y); }); g.stroke();
+  text('distance from target', 30, y0 + 14, '#6b6862', 11);
+  text(`${info.n} steering · green arrow = the class's average push now`, 24, 24, '#6b6862', 13);
+}
+function stepSteerPlayer(now) {
+  if (!me) return;
+  const { cx, cy, s } = arena();
+  let x = 0, y = 0;
+  if (pointer.down) { x = (pointer.x - cx) / (s * 0.6); y = (pointer.y - cy) / (s * 0.6); const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; } }
+  const changed = Math.abs(x - myIn.x) + Math.abs(y - myIn.y) > 0.05;
+  if ((changed && now - lastIn > 120) || (!pointer.down && (myIn.x || myIn.y))) {
+    lastIn = now; myIn = { x: +x.toFixed(2), y: +y.toFixed(2) };
+    Net.here('steer/in/' + Net.id, myIn);
+  }
+}
+function drawSteerPlayer() {
+  g.fillStyle = '#f4f2ed'; g.fillRect(0, 0, W, H);
+  if (view) drawArena(view.px, view.py, view.tx, view.ty, false);
+  const { cx, cy, s } = arena();
+  if (pointer.down) {
+    g.strokeStyle = '#1f7a4d'; g.lineWidth = 4; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + myIn.x * s * 0.6, cy + myIn.y * s * 0.6); g.stroke();
+  }
+  text('Drag from the centre to push the red dot onto the ring', W / 2, H - 28, '#6b6862', 14, 'center');
+}
+
+/* ============================================================
+   3. TWO ROOMS — presence at different bandwidths
+   ============================================================ */
+let two = {}, myTwo = { on: false, x: 0.5, y: 0.5 }, lastTwo = 0;
+Net.onValue('two', (v) => { two = v || {}; });
+function stepTwoPlayer(now) {
+  if (!me) return;
+  const pad = { y: H * 0.5, h: H * 0.5 };
+  const on = pointer.down && pointer.y > pad.y;
+  const x = +(pointer.x / W).toFixed(3), y = +Math.max(0, (pointer.y - pad.y) / pad.h).toFixed(3);
+  const moved = on && Math.abs(x - myTwo.x) + Math.abs(y - myTwo.y) > 0.02;
+  if (on !== myTwo.on || (moved && now - lastTwo > 100)) {
+    lastTwo = now; myTwo = { on, x, y };
+    Net.here('two/' + Net.id, { on, x, y, hue: me.hue });
+  }
+}
+function drawSignal(entries, x0, y0, w, h, band, dark) {
+  const on = entries.filter((p) => p.on);
+  g.fillStyle = dark ? '#121212' : '#fbfaf7'; g.fillRect(x0, y0, w, h);
+  if (band === 0) { if (on.length) { g.fillStyle = '#fff1c7'; g.fillRect(x0, y0, w, h); } return; }
+  if (band === 1) {
+    const r = Math.min(18, w / 40);
+    on.forEach((p, i) => { g.fillStyle = '#ffd678'; g.beginPath(); g.arc(x0 + w / 2 + (i - (on.length - 1) / 2) * r * 2.6, y0 + h / 2, r, 0, 7); g.fill(); });
+    return;
+  }
+  on.forEach((p) => {
+    const X = x0 + p.x * w, Y = y0 + p.y * h;
+    g.fillStyle = band === 3 ? `hsla(${p.hue},80%,60%,.9)` : '#ffd678';
+    if (band === 3) { const t = performance.now() / 600; g.strokeStyle = `hsla(${p.hue},80%,60%,.5)`; g.lineWidth = 2; g.beginPath(); g.arc(X, Y, 16 + (t % 1) * 30, 0, 7); g.stroke(); }
+    g.beginPath(); g.arc(X, Y, 14, 0, 7); g.fill();
+  });
+}
+function drawTwoPlayer() {
+  const mine = groupOf(Net.id), other = mine === 'A' ? 'B' : 'A';
+  const others = Object.entries(two).filter(([id]) => id !== Net.id && groupOf(id) === other).map(([, p]) => p);
+  drawSignal(others, 0, 0, W, H * 0.5, state.band, true);
+  text(`Room ${other} · ${BANDS[state.band]}`, 14, 22, '#8d8a84', 12);
+  g.fillStyle = myTwo.on ? '#e9e4d8' : '#f4f2ed'; g.fillRect(0, H * 0.5, W, H * 0.5);
+  g.strokeStyle = '#d7d3ca'; g.beginPath(); g.moveTo(0, H * 0.5); g.lineTo(W, H * 0.5); g.stroke();
+  text(`You are in Room ${mine}`, W / 2, H * 0.75 - 10, '#141414', 20, 'center', 700);
+  text('Press and hold here to send', W / 2, H * 0.75 + 16, '#6b6862', 14, 'center');
+}
+function drawTwoHost() {
+  const byG = { A: [], B: [] };
+  Object.entries(two).forEach(([id, p]) => { if (players[id]) byG[groupOf(id)].push(p); });
+  const half = (W - 12) / 2;
+  drawSignal(byG.A, 0, 0, half, H, 3, true);
+  drawSignal(byG.B, half + 12, 0, half, H, 3, true);
+  g.fillStyle = '#f4f2ed'; g.fillRect(half, 0, 12, H);
+  text('ROOM A — full signal', 16, 26, '#8d8a84', 12); text('ROOM B — full signal', half + 28, 26, '#8d8a84', 12);
+  text(`Each room receives: ${BANDS[state.band]}`, W / 2, H - 20, '#ffd678', 16, 'center', 600);
+}
+
+/* ---------------- helpers + loop ---------------- */
+function text(s, x, y, col, size, align, weight) {
+  g.fillStyle = col; g.font = `${weight || 400} ${size}px "Instrument Sans", Aptos, sans-serif`; g.textAlign = align || 'left'; g.fillText(s, x, y);
+}
+function drawWaiting(msg) { g.fillStyle = '#f4f2ed'; g.fillRect(0, 0, W, H); text(msg, W / 2, H / 2, '#6b6862', 18, 'center'); }
+
+let prev = performance.now();
+function loop(now) {
+  const dt = Math.min(100, now - prev); prev = now;
+  const act = state.act;
+  if (act === 'lobby') { if (!HOST) drawWaiting(me ? `You're in, ${me.name}. Watch the screen.` : ''); else g.clearRect(0, 0, W, H); }
+  if (act === 'fireflies') { stepFly(dt); HOST ? drawFirefliesHost() : drawFirefliesPlayer(); }
+  if (act === 'steersman') { if (HOST) drawSteerHost(stepSteerHost(dt, now)); else { stepSteerPlayer(now); drawSteerPlayer(); } }
+  if (act === 'tworooms') { if (HOST) drawTwoHost(); else { stepTwoPlayer(now); drawTwoPlayer(); } }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
