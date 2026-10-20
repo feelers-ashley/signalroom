@@ -234,7 +234,7 @@ addEventListener('resize', resize); resize();
 
 const pointer = { down: false, x: 0, y: 0 };
 function pt(e) { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
-cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); Object.assign(pointer, pt(e), { down: true }); onPress(); });
+cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); const p = pt(e); Object.assign(pointer, p, { down: true, sx: p.x, sy: p.y }); onPress(); });
 cv.addEventListener('pointermove', (e) => { Object.assign(pointer, pt(e)); });
 const up = () => { pointer.down = false; onRelease(); };
 cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
@@ -312,7 +312,7 @@ function drawFirefliesHost() {
 const dot = { x: 0, y: 0, vx: 0, vy: 0 };     // host simulation, in -1..1 space
 const trail = [], errs = [], buffer = [];
 let inputs = {}, view = null, lastSend = 0, lastIn = 0, myIn = { x: 0, y: 0 };
-Net.onValue('steer/in', (v) => { inputs = v || {}; });
+if (HOST) Net.onValue('steer/in', (v) => { inputs = v || {}; });   // only the projector needs every push
 Net.onValue('steer/view', (v) => { view = v; });
 function target(t) { return { x: 0.65 * Math.sin(t * 0.00031), y: 0.55 * Math.sin(t * 0.00047 + 1) }; }
 function arena() { const s = Math.min(W, H - 90) * 0.45; return { cx: W / 2, cy: (H - 90) / 2 + 10, s }; }
@@ -323,11 +323,13 @@ function stepSteerHost(dt, now) {
   buffer.push({ t: now, x: avg.x, y: avg.y });
   while (buffer.length > 1 && buffer[1].t <= now - state.delay) buffer.shift();
   const u = buffer[0];                       // the push from `delay` ms ago
-  const k = 2.2 * state.gain * dt / 1000;
-  dot.vx = (dot.vx + u.x * k) * Math.pow(0.35, dt / 1000);
-  dot.vy = (dot.vy + u.y * k) * Math.pow(0.35, dt / 1000);
-  dot.x = Math.max(-1, Math.min(1, dot.x + dot.vx * dt / 1000));
-  dot.y = Math.max(-1, Math.min(1, dot.y + dot.vy * dt / 1000));
+  // the dot's speed follows the (delayed) push: no coasting, so the class can steer it
+  const speed = 0.8 * state.gain, ease = Math.min(1, dt / 120);
+  dot.vx += (u.x * speed - dot.vx) * ease;
+  dot.vy += (u.y * speed - dot.vy) * ease;
+  dot.x += dot.vx * dt / 1000; dot.y += dot.vy * dt / 1000;
+  if (Math.abs(dot.x) > 1) { dot.x = Math.sign(dot.x); dot.vx = 0; }   // stop at the walls
+  if (Math.abs(dot.y) > 1) { dot.y = Math.sign(dot.y); dot.vy = 0; }
   const tg = target(now);
   trail.push({ x: dot.x, y: dot.y }); if (trail.length > 240) trail.shift();
   errs.push(Math.hypot(dot.x - tg.x, dot.y - tg.y)); if (errs.length > 600) errs.shift();
@@ -359,7 +361,8 @@ function stepSteerPlayer(now) {
   if (!me) return;
   const { cx, cy, s } = arena();
   let x = 0, y = 0;
-  if (pointer.down) { x = (pointer.x - cx) / (s * 0.6); y = (pointer.y - cy) / (s * 0.6); const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; } }
+  const reach = Math.max(40, s * 0.3);              // how far you drag for a full push
+  if (pointer.down) { x = (pointer.x - pointer.sx) / reach; y = (pointer.y - pointer.sy) / reach; const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; } }
   const changed = Math.abs(x - myIn.x) + Math.abs(y - myIn.y) > 0.05;
   if ((changed && now - lastIn > 120) || (!pointer.down && (myIn.x || myIn.y))) {
     lastIn = now; myIn = { x: +x.toFixed(2), y: +y.toFixed(2) };
@@ -370,10 +373,12 @@ function drawSteerPlayer() {
   g.fillStyle = '#f4f2ed'; g.fillRect(0, 0, W, H);
   if (view) drawArena(view.px, view.py, view.tx, view.ty, false);
   const { cx, cy, s } = arena();
-  if (pointer.down) {
-    g.strokeStyle = '#1f7a4d'; g.lineWidth = 4; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + myIn.x * s * 0.6, cy + myIn.y * s * 0.6); g.stroke();
+  if (pointer.down) {                                 // a joystick from where your finger landed
+    const reach = Math.max(40, s * 0.3);
+    g.strokeStyle = '#d7d3ca'; g.lineWidth = 2; g.beginPath(); g.arc(pointer.sx, pointer.sy, reach, 0, 7); g.stroke();
+    g.strokeStyle = '#1f7a4d'; g.lineWidth = 4; g.beginPath(); g.moveTo(pointer.sx, pointer.sy); g.lineTo(pointer.sx + myIn.x * reach, pointer.sy + myIn.y * reach); g.stroke();
   }
-  text('Drag from the centre to push the red dot onto the ring', W / 2, H - 28, '#6b6862', 14, 'center');
+  text('Touch anywhere and drag to push the red dot onto the ring', W / 2, H - 28, '#6b6862', 14, 'center');
 }
 
 /* ============================================================
